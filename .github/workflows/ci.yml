@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install black flake8 coverage
+      - name: Check formatting with black
+        run: black --check .
+      - name: Lint with flake8
+        run: flake8 .
+      - name: Run tests with coverage
+        run: |
+          coverage run manage.py test
+          coverage xml
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          file: coverage.xml
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package application
+        run: zip -r deploy.zip . -x "*.git*" ".github/*" "*.sqlite3" "__pycache__/*"
+      - name: Deploy to AWS Elastic Beanstalk
+        uses: einaregilsson/beanstalk-deploy@v22
+        with:
+          aws_access_key: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          application_name: mysite
+          environment_name: mysite-dev
+          version_label: ci-${{ github.sha }}
+          region: us-east-2
+          deployment_package: deploy.zip
